@@ -9,7 +9,7 @@
 #### Encoder
 文件encoder.cpp和encoder.hpp是类Encoder的源文件，编码压缩是视频监控系统的第二部，所以在主
 函数中调用创建的第二类就是Encoder，该类中调用了x264开源编码的库的代码，所以在自动编译时要
-加上-lx264
+加上<u>-lx264</u>
 
 #### Sender
 文件sender.cpp和sender.hpp是类Sender的源文件，码流发送时视频监控系统的第三部分，所以在主函数中调用第三个类是Sender，该类中使用了开源的Jrtp库，用以实现通过RTP和RTCP协议的码流传输，从而在自动编译时需要加入-ljrtp和-lpthread两个动态链接库。
