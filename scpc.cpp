@@ -180,7 +180,6 @@ void *recv_thr(void *arg)
 					}
 					fwrite(pack->GetPayloadData(), pack->GetPayloadLength(), 1, fp);
 					fs.write((const char *)pack->GetPayloadData(), pack->GetPayloadLength());
-//					fs.write("hello world\n", 12);
 				}
 			} while(sess.GotoNextSourceWithData());
 		}
