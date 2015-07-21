@@ -9,6 +9,8 @@ int main(int argc, char **argv)
 {
 	FILE *fp;
 	int fd;
+	uint8_t null_array[4];
+	char null_char[4];
 	if((fd = open("out.h264", O_CREAT | O_WRONLY, 444)) == -1){
 		cout << "Failed to open output file" << endl;
 		exit(-1);
@@ -97,11 +99,16 @@ int main(int argc, char **argv)
 	cap.open_device();
 	cap.init_device();
 	cap.start_capture();
-	for(int i = 0; i < 200; i++){
+	for(int i = 0; i < 2000; i++){			// sending 2000 frames 
 		cap.mainloop(1);			// for capturing, maybe this could be changed as thread 1
 		encoder.encode(cap.yuv420p, fd);	// for encoding, maybe this could be changed as thread 2
-		for(encoder.nal = encoder.nals; encoder.nal < encoder.nals + encoder.nnal; 	encoder.nal++){
+		for(encoder.nal = encoder.nals; encoder.nal < encoder.nals + encoder.nnal; encoder.nal++){
 			sender.sendNalu(encoder.nal->p_payload, encoder.nal->i_payload);		// for sending, maybe this could be changed as thread 3
+		}
+
+		if((i+1) % 200 == 0){
+			cout << "Debug" << i <<  endl;
+			sender.SendRTCPAPPPacket((uint8_t)0, null_array, null_char, 4);	
 		}
 	}
 	cap.stop_capture();
