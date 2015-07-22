@@ -16,6 +16,7 @@
 #include <jrtplib3/rtpipv4address.h>
 #include <jrtplib3/rtpsessionparams.h>
 #include <jrtplib3/rtppacket.h>
+#include <jrtplib3/rtcpapppacket.h>
 #include <jrtplib3/rtperrors.h>
 #include <jrtplib3/rtpsourcedata.h>
 
@@ -32,6 +33,8 @@ extern "C" {
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
 #include <libswscale/swscale.h>
+#include <signal.h>
+#include <string.h>
 }
 
 #define DEBUG		0
@@ -49,38 +52,44 @@ pthread_mutex_t		mutex; 			// for synchronizing  multi-thread
 
 int 			write_fd;
 int 			thread_exit = 0;
-int 			cond;
+int 			main_cond;		// Used in main thread
+int 			recv_cond;		// Used in receiving thread
 FILE 			*fp;
-int cache_count = 0;
-char tmp[32];					// Used to store cache file name
+int 			cache_count = 0;
+char 			tmp[32];					// Used to store cache file name
 
 fstream 		fs;			// for buffering stream data
 queue<string> 		cache_q;		// Cache queue is used to store cache files.
-
 						// For now, there are 10 cache files in cache directory.
 
 class UserSession : public RTPSession
 {
 public:
 	void OnBYEPacket(RTPSourceData *srcdat){
-		cond = 0;
+		recv_cond = 0;
+		main_cond = 0;
 		fs.close();
-		cout << "Receiving: Done" << endl;
+		cout << "Receiving: length is " << cache_q.size() << endl;
 	}
-	void OnAPPPacket(RTCPAPPPacket *apppakcet, 
+	void OnAPPPacket(RTCPAPPPacket *apppacket, 
 			const RTPTime &receivetime, 
 			const RTPAddress *senderaddress){
-		fs.close();
+		if(strcmp((const char *)apppacket->GetAPPData(), "init") != 0)
+			fs.close();
 //		pthread_mutex_unlock(&mutex);
-		cache_count++;
 		if(cache_count == 10)
 			cache_count = 0;
-		cache_q.push(tmp);
 		sprintf(tmp, "./cache/cache_%d", cache_count);
-		cout << tmp << endl;
-		fs.open(tmp, fstream::in | fstream::out);
+		fs.open(tmp, fstream::in | fstream::out | fstream::trunc);
+		cache_q.push(tmp);
+		cache_count++;
 	}
 };
+
+void handler(int arg)
+{
+	main_cond = 0;
+}
 
 void checkerror(int rtperr)
 {
@@ -121,7 +130,7 @@ int init_mutex(pthread_mutex_t mutex){
 /* Thread for receiving video stream */
 void *recv_thr(void *arg)
 {
-	cond = 1;
+	recv_cond = 1;
 	long total = 0;
 	string ipstr;
 	uint16_t destport, baseport;
@@ -162,10 +171,8 @@ void *recv_thr(void *arg)
 	RTPIPv4Address addr(destip, destport);
 	status = sess.AddDestination(addr);
 	checkerror(status);
-	sprintf(tmp, "./cache/cache_%d", cache_count);
-	fs.open(tmp, fstream::in | fstream::out);
 
-	while(cond){
+	while(recv_cond){
 //	for(;;){
 //		pthread_mutex_lock(&mutex);
 		sess.BeginDataAccess();
@@ -180,6 +187,7 @@ void *recv_thr(void *arg)
 					}
 					fwrite(pack->GetPayloadData(), pack->GetPayloadLength(), 1, fp);
 					fs.write((const char *)pack->GetPayloadData(), pack->GetPayloadLength());
+//					fs.write("hello world\n", 12);
 				}
 			} while(sess.GotoNextSourceWithData());
 		}
@@ -212,12 +220,14 @@ void *decode_thr(void *arg)
 
 	av_register_all();
 	avformat_network_init();
-
-	write_fd = open("recv.yuv", O_RDWR | O_CREAT, 0666);
+while(!cache_q.empty()){
+	string cache = cache_q.front();
+	write_fd = open("recv.yuv", O_RDWR | O_CREAT | O_TRUNC, 0666);
 	if(write_fd < 0){
 		perror("open");
 		exit(1);
 	}
+	cout << cache.c_str() << endl;
 
 	ret=avformat_open_input(&formatContext, "res.h264", NULL,NULL);
 	if(ret<0)
@@ -249,6 +259,7 @@ void *decode_thr(void *arg)
 		error_handle("malloc decodedBuffer error!");
 
 	av_init_packet(&packet);
+	cout << "Debug" << endl;
 	
 	while(av_read_frame(formatContext,&packet)>=0){
 			ret=avcodec_decode_video2(codecContext,decodedFrame,&finishedFrame,&packet);
@@ -257,6 +268,7 @@ void *decode_thr(void *arg)
 			if(finishedFrame){
 				avpicture_layout((AVPicture*)decodedFrame,PIX_FMT_YUV420P,IMAGE_WIDTH,IMAGE_HEIGHT,decodedBuffer,decodedBufferSize);
 				ret=write(write_fd,decodedBuffer,decodedBufferSize);
+		//		ret = write(write_fd, "hello\n", 6);
 				if(ret<0)
 					error_handle("write yuv stream error!");
 			}
@@ -268,7 +280,7 @@ void *decode_thr(void *arg)
 	free(decodedBuffer);
 	av_free(decodedFrame);
 	avcodec_close(codecContext);
-
+} // end of while statement
 	return ((void *)1);
 }
 
@@ -437,7 +449,9 @@ int main(int argc, char **argv)
 	pthread_t recv_tid, decode_tid, d2d_tid;
 	int err;
 	void *tret;
-	cond = 1;
+	main_cond = 1;
+
+	signal(SIGINT, handler);
 
 	err = pthread_create(&recv_tid, NULL, recv_thr, NULL);
 	if(err != 0){
@@ -445,19 +459,14 @@ int main(int argc, char **argv)
 		exit(-1);
 	}
 
-	
-/*	err = pthread_join(recv_tid, &tret);
+/*	
+	err = pthread_join(recv_tid, &tret);
 	if(err != 0){
 		fprintf(stderr, "Can't join with thread %lu\n", recv_tid);	
 		exit(-1);
 	}
+	cout << "Main : Debug" << endl;
 	*/
-	
-/*	fs.close();
-	cache_q.push(tmp);
-	if(10 == cache_count)
-		cache_count = 0;
-		*/
 	
 /*if(DEBUG){
 	err = pthread_create(&decode_tid, NULL, decode_thr, NULL);
@@ -484,7 +493,7 @@ int main(int argc, char **argv)
 		exit(-1);
 	}
 	*/
-	while(cond);
+	while(main_cond);
 
 	return 0;
 }
