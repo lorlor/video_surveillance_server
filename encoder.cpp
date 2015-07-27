@@ -15,28 +15,30 @@ int Encoder::set_param(void){
 		return 0;
 	}
 	else{
-		x264_param_default_preset(this->param, "veryfast", "zerolatency");
+		x264_param_default_preset(this->param, "fast", "zerolatency");	// Original option is [veryfast].
 		this->param->i_threads = X264_SYNC_LOOKAHEAD_AUTO;
 		this->param->i_width = this->width;
 		this->param->i_height = this->height;
 		this->param->i_keyint_max = 25;
-		this->param->b_intra_refresh = 1;
+		this->param->b_intra_refresh = 0;
 		this->param->i_frame_total = 0;
+		this->param->i_frame_reference = 4;
 
-		this->param->i_bframe = 5;
+		this->param->i_bframe = 2;
 		this->param->b_open_gop = 0;
 		this->param->i_bframe_pyramid = 0;
 		this->param->i_bframe_adaptive = X264_B_ADAPT_TRELLIS;
 
 		this->param->i_log_level = X264_LOG_DEBUG;
 
-		this->param->rc.i_bitrate = 1024*10;
+		this->param->rc.i_bitrate = 192 * 480;
 		this->param->i_fps_den = 1;
 		this->param->i_fps_num = 25;
 		this->param->i_timebase_den = this->param->i_fps_num;
 		this->param->i_timebase_num = this->param->i_fps_den;
 
 		this->param->b_annexb = 1;
+		this->param->b_repeat_headers = 1;
 
 		x264_param_apply_profile(param, "baseline");
 
