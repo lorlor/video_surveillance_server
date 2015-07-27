@@ -67,7 +67,6 @@ class UserSession : public RTPSession
 public:
 	void OnBYEPacket(RTPSourceData *srcdat){
 		recv_cond = 0;
-		main_cond = 0;
 		fs.close();
 		cout << "Receiving: length is " << cache_q.size() << endl;
 	}
@@ -220,16 +219,16 @@ void *decode_thr(void *arg)
 
 	av_register_all();
 	avformat_network_init();
-while(!cache_q.empty()){
-	string cache = cache_q.front();
 	write_fd = open("recv.yuv", O_RDWR | O_CREAT | O_TRUNC, 0666);
 	if(write_fd < 0){
 		perror("open");
 		exit(1);
 	}
+while(!cache_q.empty()){
+	string cache = cache_q.front();
 	cout << cache.c_str() << endl;
 
-	ret=avformat_open_input(&formatContext, "res.h264", NULL,NULL);
+	ret=avformat_open_input(&formatContext, /*"res.h264",*/cache.c_str(), NULL, NULL);
 	if(ret<0)
 		error_handle("avformat_open_input error");
 
@@ -239,9 +238,10 @@ while(!cache_q.empty()){
 
 
 	videoStream=0;
+//	codecContext = avcodec_alloc_context3(codec);
 	codecContext=formatContext->streams[videoStream]->codec;
-
 	codec=avcodec_find_decoder(AV_CODEC_ID_H264);
+
 	if(codec==NULL)
 		error_handle("avcodec_find_decoder error!\n");
 
@@ -259,7 +259,6 @@ while(!cache_q.empty()){
 		error_handle("malloc decodedBuffer error!");
 
 	av_init_packet(&packet);
-	cout << "Debug" << endl;
 	
 	while(av_read_frame(formatContext,&packet)>=0){
 			ret=avcodec_decode_video2(codecContext,decodedFrame,&finishedFrame,&packet);
@@ -268,7 +267,7 @@ while(!cache_q.empty()){
 			if(finishedFrame){
 				avpicture_layout((AVPicture*)decodedFrame,PIX_FMT_YUV420P,IMAGE_WIDTH,IMAGE_HEIGHT,decodedBuffer,decodedBufferSize);
 				ret=write(write_fd,decodedBuffer,decodedBufferSize);
-		//		ret = write(write_fd, "hello\n", 6);
+//				ret = write(write_fd, "hello\n", 6);
 				if(ret<0)
 					error_handle("write yuv stream error!");
 			}
@@ -276,10 +275,13 @@ while(!cache_q.empty()){
 		av_free_packet(&packet);
 	}
 
+	cout << "DEbug" << endl;
 	avformat_close_input(&formatContext);
 	free(decodedBuffer);
 	av_free(decodedFrame);
 	avcodec_close(codecContext);
+	cout << "Cache file : " << cache.c_str() << endl;
+	cache_q.pop();
 } // end of while statement
 	return ((void *)1);
 }
@@ -459,22 +461,21 @@ int main(int argc, char **argv)
 		exit(-1);
 	}
 
-/*	
+	
 	err = pthread_join(recv_tid, &tret);
 	if(err != 0){
 		fprintf(stderr, "Can't join with thread %lu\n", recv_tid);	
 		exit(-1);
 	}
-	cout << "Main : Debug" << endl;
-	*/
 	
-/*if(DEBUG){
+	
+/*if(DEBUG){*/
 	err = pthread_create(&decode_tid, NULL, decode_thr, NULL);
 	if(err != 0){
 		fprintf(stderr, "Can't create decoding thread\n");
 		exit(-1);
 	}
-
+/*
 	err = pthread_join(decode_tid, &tret);
 	if(err != 0){
 		fprintf(stderr, "Can't join with thread %lu\n", decode_tid);
