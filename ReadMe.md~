@@ -35,7 +35,3 @@ clang++ queue_test.cpp -o queue_test -lpthread
 - x264
 - jrtplib
 - FFmpeg(用于客户端的解码实验)
-
-### jrtplib向Android的移植
-- 1.由于Android实现的bionic libc不同于glibc，所以pthread_cancel函数在blibc当中并没有实现。因此在移植的过程中，需要修改**jthread**中的src/pthread/jthread.cpp第125行代码，注释pthread_cancel函数，改为pthread_kill(threadid, SIGUSR1).
-- 2.由于已经修改了pthread_cancel函数，所以**jrtplib**中的example文件夹中的所有示例代码都不要再编译了，否则会出现无法移植的情况。具体的只需修改CMakeLists.txt中的add_subdirectory(examples)即可.
